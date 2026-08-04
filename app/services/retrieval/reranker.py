@@ -1,55 +1,61 @@
+import numpy as np
+
+from app.core.config import get_settings
 from app.services.qdrant.search import ScoredChunk
-from app.services.retrieval.reranker import Reranker
 
 
-def _chunk(id_, vector, score):
-    return ScoredChunk(
-        id=id_,
-        score=score,
-        content=f"content-{id_}",
-        file_id="file-1",
-        file_name="doc.pdf",
-        knowledge_base_id="kb-1",
-        page_number=1,
-        chunk_index=0,
-        vector=vector,
-    )
+def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+    denom = (np.linalg.norm(a) * np.linalg.norm(b)) or 1e-8
+    return float(np.dot(a, b) / denom)
 
 
-def test_rerank_without_vectors_falls_back_to_score_order():
-    chunks = [_chunk("a", None, 0.5), _chunk("b", None, 0.9)]
-    reranker = Reranker(lambda_param=0.5)
+class Reranker:
+    """Reorders retrieved chunks using Maximal Marginal Relevance (MMR).
 
-    ranked = reranker.rerank(query_vector=[1.0, 0.0], chunks=chunks, top_k=2)
+    MMR trades off pure similarity-to-query against redundancy between
+    already-selected chunks, so the final context isn't N near-duplicate
+    passages of the single most similar chunk. This is dependency-light
+    (numpy only) and reuses the vectors already returned by Qdrant —
+    no extra embedding calls or cross-encoder model needed.
 
-    assert [c.id for c in ranked] == ["b", "a"]
+    If you later want a cross-encoder reranker instead, swap the
+    implementation of `rerank` behind this same interface; callers
+    (chat.py, search.py) don't need to change.
+    """
 
+    def __init__(self, lambda_param: float | None = None):
+        settings = get_settings()
+        self.lambda_param = lambda_param if lambda_param is not None else settings.rerank_mmr_lambda
 
-def test_rerank_prefers_diverse_chunks_over_near_duplicates():
-    # "a" and "b" point in nearly the same direction (near-duplicates of
-    # each other and both highly relevant); "c" is orthogonal to "a" and
-    # less relevant on its own, but carries zero redundancy.
-    query_vector = [1.0, 0.0]
-    chunks = [
-        _chunk("a", [0.8, 0.6], score=0.99),
-        _chunk("b", [0.78, 0.62], score=0.95),
-        _chunk("c", [0.6, -0.8], score=0.4),
-    ]
-    reranker = Reranker(lambda_param=0.5)
+    def rerank(self, query_vector: list[float], chunks: list[ScoredChunk], top_k: int) -> list[ScoredChunk]:
+        if not chunks:
+            return []
 
-    ranked = reranker.rerank(query_vector=query_vector, chunks=chunks, top_k=2)
+        # Fall back to plain score order if vectors weren't fetched
+        # (retrieve(..., with_vectors=False)).
+        if any(c.vector is None for c in chunks):
+            return sorted(chunks, key=lambda c: c.score, reverse=True)[:top_k]
 
-    # "a" wins first (highest pure relevance). For the second slot, MMR
-    # should favor "c" over the near-duplicate "b" once redundancy with
-    # the already-selected "a" is penalized.
-    assert ranked[0].id == "a"
-    assert ranked[1].id == "c"
+        query_vec = np.array(query_vector)
+        vectors = {c.id: np.array(c.vector) for c in chunks}
+        relevance = {c.id: _cosine(query_vec, vectors[c.id]) for c in chunks}
 
+        selected: list[ScoredChunk] = []
+        remaining = list(chunks)
 
-def test_rerank_respects_top_k():
-    chunks = [_chunk(str(i), [1.0, 0.0], score=1.0 - i * 0.1) for i in range(5)]
-    reranker = Reranker(lambda_param=0.5)
+        while remaining and len(selected) < top_k:
+            best_chunk, best_mmr = None, float("-inf")
+            for candidate in remaining:
+                sim_to_query = relevance[candidate.id]
+                sim_to_selected = max(
+                    (_cosine(vectors[candidate.id], vectors[s.id]) for s in selected),
+                    default=0.0,
+                )
+                mmr_score = self.lambda_param * sim_to_query - (1 - self.lambda_param) * sim_to_selected
+                if mmr_score > best_mmr:
+                    best_mmr, best_chunk = mmr_score, candidate
+            selected.append(best_chunk)
+            remaining.remove(best_chunk)
 
-    ranked = reranker.rerank(query_vector=[1.0, 0.0], chunks=chunks, top_k=2)
+        return selected
 
-    assert len(ranked) == 2

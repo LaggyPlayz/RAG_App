@@ -1,34 +1,44 @@
-"""FastAPI entrypoint.
+"""FastAPI Application Entrypoint.
 
-This wires up the routes built in this pass (health, search, chat).
-documents/sql/conversations/admin routers are left commented out —
-uncomment them once those slices are implemented, so importing this
-file doesn't break on routers that don't exist yet.
+Registers all API routes, database startup initialization, exception handlers,
+CORS middleware, and OpenAPI dashboard documentation metadata.
 """
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import chat, health, search
-
-# from app.api.routes import admin, conversations, documents, sql
+from app.api.router import api_router
 from app.core.config import get_settings
+from app.core.database import get_engine
 from app.core.logging import setup_logging
+from app.db.base import Base
+import app.db.models  # Load all ORM models
 from app.services.qdrant.collections import ensure_collection
 from app.utils.exceptions import AppError
 
 settings = get_settings()
 setup_logging(settings.log_level)
 
-app = FastAPI(title="RAG_App", version="0.1.0")
+app = FastAPI(
+    title="rag-backend",
+    version="1.0.0",
+    description="Production-ready Retrieval-Augmented Generation (RAG) Backend API",
+    openapi_url="/openapi.json",
+    docs_url="/docs",
+)
 
-app.include_router(health.router)
-app.include_router(chat.router)
-app.include_router(search.router)
-# app.include_router(documents.router)
-# app.include_router(sql.router)
-# app.include_router(conversations.router)
-# app.include_router(admin.router)
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include central router
+app.include_router(api_router)
 
 
 @app.exception_handler(AppError)
@@ -41,4 +51,10 @@ async def app_error_handler(request: Request, exc: AppError):
 
 @app.on_event("startup")
 async def on_startup():
+    # Ensure Qdrant collection exists
     await ensure_collection()
+
+    # Ensure PostgreSQL database tables exist
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

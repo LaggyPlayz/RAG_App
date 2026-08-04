@@ -1,15 +1,49 @@
-# Packages this retrieval + chat orchestration slice needs.
-# Merge into your existing requirements.txt — don't overwrite it,
-# since it likely already pins versions for other parts of the app.
-
+# ── Core Framework ──
 fastapi>=0.110
 uvicorn[standard]>=0.27
 pydantic>=2.6
 pydantic-settings>=2.2
+python-multipart>=0.0.9
+
+# ── Database (PostgreSQL + SQLAlchemy 2) ──
+sqlalchemy[asyncio]>=2.0
+asyncpg>=0.29
+alembic>=1.13
+psycopg2-binary>=2.9
+
+# ── Auth & Security ──
+passlib[bcrypt]>=1.7
+python-jose[cryptography]>=3.3
+cryptography>=42.0
+pydantic[email]>=2.6.0
+
+# ── LLM & Embeddings ──
 openai>=1.30
-qdrant-client>=1.9
-redis>=5.0
-numpy>=1.26
 tiktoken>=0.7
+
+# ── Vector Store ──
+qdrant-client>=1.9
+
+# ── Cache ──
+redis>=5.0
+
+# ── SQL Validation ──
+sqlglot>=23.0
+
+# ── Agent Orchestration ──
+langgraph>=0.2
+langchain-core>=0.3
+
+# ── Document Parsing ──
+PyPDF2>=3.0
+python-docx>=1.1
+openpyxl>=3.1
+aiofiles>=23.0
+
+# ── Utilities ──
+numpy>=1.26
+
+# ── Testing ──
 pytest>=8.0
 pytest-asyncio>=0.23
+httpx>=0.27
