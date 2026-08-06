@@ -8,6 +8,9 @@ from app.repositories.permission_repo import PermissionRepository
 from app.repositories.user_repo import UserRepository
 from app.services.permission_service import PermissionService
 
+from app.api.dependencies import get_audit_service
+from app.services.audit_service import AuditService
+
 router = APIRouter(prefix="/api/permissions", tags=["permissions"])
 
 
@@ -15,14 +18,25 @@ router = APIRouter(prefix="/api/permissions", tags=["permissions"])
 async def create_table_permission(
     request: TablePermissionCreate,
     tenant_id: str = Depends(get_tenant_id),
-    _admin: dict = Depends(require_tenant_admin),
+    admin_payload: dict = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
+    audit_svc: AuditService = Depends(get_audit_service),
 ):
     perm_repo = PermissionRepository(db)
     user_repo = UserRepository(db)
     service = PermissionService(perm_repo, user_repo)
 
     tp = await service.grant_table_permission(tenant_id, request)
+
+    await audit_svc.log_event(
+        action="permission_granted",
+        tenant_id=tenant_id,
+        user_id=admin_payload.get("sub"),
+        resource_type="table_permission",
+        resource_id=str(tp.id),
+        details={"table_id": request.table_id, "connection_id": request.connection_id},
+    )
+
 
     cols_res = [
         ColumnPermissionResponse(

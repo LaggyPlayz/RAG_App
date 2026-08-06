@@ -37,7 +37,7 @@ class MetadataCacheService:
             for p in perms:
                 table_id_str = str(p.table_id)
                 col_perms = {
-                    str(cp.column_id): cp.can_read
+                    str(cp.column_id): {"can_read": cp.can_read, "mask_type": getattr(cp, "mask_type", None)}
                     for cp in p.column_permissions
                 }
                 user_permissions[table_id_str] = {
@@ -58,7 +58,7 @@ class MetadataCacheService:
                     # Admin gets access to all enabled tables
                     if is_admin:
                         cols = [
-                            {"name": c.column_name, "type": c.data_type, "is_pk": c.is_primary_key}
+                            {"name": c.column_name, "type": c.data_type, "is_pk": c.is_primary_key, "mask_type": None}
                             for c in table.columns
                         ]
                         permitted_schema[table.table_name] = {
@@ -75,10 +75,22 @@ class MetadataCacheService:
                         cols = []
                         for c in table.columns:
                             col_id_str = str(c.id)
-                            # If explicit column permission exists and can_read is False, omit it
-                            if col_id_str in col_map and not col_map[col_id_str]:
+                            col_perm = col_map.get(col_id_str)
+                            if isinstance(col_perm, dict):
+                                if not col_perm.get("can_read", True):
+                                    continue
+                                mask_type = col_perm.get("mask_type")
+                            elif col_perm is False:
                                 continue
-                            cols.append({"name": c.column_name, "type": c.data_type, "is_pk": c.is_primary_key})
+                            else:
+                                mask_type = None
+
+                            cols.append({
+                                "name": c.column_name,
+                                "type": c.data_type,
+                                "is_pk": c.is_primary_key,
+                                "mask_type": mask_type,
+                            })
 
                         permitted_schema[table.table_name] = {
                             "schema": schema.schema_name,
@@ -87,3 +99,4 @@ class MetadataCacheService:
                         }
 
         return permitted_schema
+

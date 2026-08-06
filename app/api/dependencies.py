@@ -1,5 +1,8 @@
+from app.services.audit_service import AuditService
+from app.core.database import get_db
 from functools import lru_cache
-
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.services.history.engine import HistoryEngine
 from app.services.llm.embeddings import EmbeddingService
@@ -43,3 +46,13 @@ def get_history_engine() -> HistoryEngine:
     # client, which is already a cached singleton — cheap to construct
     # per request, avoids any shared mutable state across requests.
     return HistoryEngine()
+
+
+from app.repositories.audit_repo import AuditRepository
+from app.services.audit_service import AuditService
+
+
+def get_audit_service(db: AsyncSession = Depends(get_db)) -> AuditService:
+    repo = AuditRepository(db)
+    return AuditService(repo)
+

@@ -63,6 +63,10 @@ RAG_App/
 - **Vector search over Qdrant** — collection management, ingestion, and similarity search (`app/services/qdrant/`).
 - **Retrieval pipeline with reranking** — retriever → reranker → context builder before anything reaches the LLM (`app/services/retrieval/`).
 - **Guarded Text-to-SQL** — natural language to SQL, validated and executed through a dedicated guard/executor rather than a raw LLM-to-database path (`app/services/sql/`).
+- **Backend row-level security enforcement** — mandatory tenant and user row filters are injected directly into the SQL AST via SQLGlot before any query executes (`guard.py`). The LLM cannot bypass these filters.
+- **Sensitive column masking** — columns marked with a `mask_type` (`partial`, `email`, `full`/`redact`, `hash`) are automatically masked in query results before they reach the LLM or the API response (`formatter.py`).
+- **Full audit trail** — all significant actions (login, connection create/test/schema-sync, file upload/delete, permission grants, chat, SQL execution, conversation deletion) are written to `audit_logs` via `AuditService`.
+- **Postgres-backed chat persistence** — every conversation, user/assistant message, SQL query execution record, and document citation is stored in Postgres so that `GET /api/conversations/{id}` and `GET /api/messages/{id}/sql` return real data.
 - **Conversation history/memory** — bootstrap, sliding-window, and storage layer for multi-turn context (`app/services/history/`).
 - **Async background processing** — ingestion offloaded to workers backed by Redis (`app/workers/`, `app/services/redis/`).
 - **Health checks** for orchestrated/containerized deployment.
@@ -155,6 +159,25 @@ Storage:
 
 ---
 
+## Security Controls
+
+This system implements several layered, backend-enforced security controls that cannot be bypassed by the LLM or by prompt injection:
+
+| Control | Where enforced | How |
+|---|---|---|
+| **Row-level filters** | `SQLGuard.inject_row_filters()` | Mandatory `WHERE` conditions (e.g. `tenant_id`, `user_id`) are injected into the SQL AST via SQLGlot after LLM generation, before execution. |
+| **Table allow-list** | `SQLGuard.validate_and_sanitize()` | Only tables visible in `permitted_schema` may be referenced; all others raise `SQLValidationError`. |
+| **Column visibility** | `MetadataCacheService` | Columns with `can_read = false` are omitted from the schema context sent to the LLM. |
+| **Sensitive column masking** | `apply_column_masking()` in `formatter.py` | Columns with a `mask_type` (`partial`, `email`, `full`, `hash`) are masked in result rows before they reach the LLM prompt or API response. |
+| **Statement type enforcement** | `SQLGuard` | Only `SELECT` and CTE queries allowed; DDL/DML, multi-statements, and SQL comments are all rejected. |
+| **System schema blocking** | `SQLGuard` | Access to system schemas (e.g. `information_schema`, `pg_catalog`) is blocked. |
+| **Encrypted credentials** | `ConnectionService` | Database passwords are encrypted at rest using Fernet symmetric encryption. |
+| **JWT authentication** | `core/security.py` | Access and refresh tokens with separate secrets and expiry windows. |
+| **Tenant isolation** | All repositories | Every query is scoped to `tenant_id` extracted from the JWT, enforced at repository level. |
+| **Audit logging** | `AuditService` | Login, connection CRUD, schema sync, file upload/delete, permission grants, chat, SQL execution, and conversation deletion are all recorded in `audit_logs`. |
+
+---
+
 ## Running Tests
 
 ```bash
@@ -179,8 +202,10 @@ Test coverage in this repo:
 | `test_chunker.py` | Baseline chunking strategies |
 | `test_advanced_chunkers.py` | Agentic/semantic/proposition-style chunkers |
 | `test_loaders.py` | Document ingestion loaders |
-| `test_sql_formatter.py` | SQL formatting utilities |
-| `test_sql_guard.py` | SQL validation/safety rules |
+| `test_sql_formatter.py` | SQL result formatting and column masking |
+| `test_sql_guard.py` | SQL validation, safety rules, and row-filter AST injection |
+| `test_security.py` | JWT generation/verification, Fernet encryption, and audit service logging |
+| `test_permissions.py` | Column-level permission filtering in `MetadataCacheService` |
 | `test_history_window.py` | Conversation history windowing |
 
 ---
@@ -285,6 +310,20 @@ Bring down (and optionally wipe volumes):
 ```bash
 docker-compose down -v
 ```
+
+---
+
+## Known Limitations & Architecture Trade-offs
+
+The following are intentional scoping decisions made for this release. They are documented here explicitly so reviewers can evaluate them as conscious choices rather than silent gaps.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | **Token streaming** | Simulated | `/api/chat/stream` runs the full orchestration pipeline to completion first, then delivers the final answer word-by-word via SSE. There is no incremental LLM token streaming. |
+| 2 | **Database adapters** | PostgreSQL + MySQL only | SQL Server and Oracle adapters are not implemented. The guard and executor are dialect-aware via SQLGlot, but only Postgres and MySQL connection strings are supported at the connection service layer. |
+| 3 | **Task queue** | In-process `asyncio` | Document ingestion is triggered via `asyncio` background tasks, not a persistent Celery/Dramatiq worker queue. There is no `worker` service in `docker-compose.yml`. This means in-flight jobs are lost on pod restart. |
+| 4 | **Schema migrations** | SQL file only | The app DB schema is initialized from `sql/init/schema.sql`. Alembic is listed in `requirements.txt` but no migrations are generated. Schema changes require manually updating the SQL file and re-initializing. |
+| 5 | **Sensitive column masking scope** | Result rows only | `mask_type` is applied to query result rows before they reach the LLM prompt or API response. It is not applied to search/retrieval chunks from document RAG. |
 
 ---
 

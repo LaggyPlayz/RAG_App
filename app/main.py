@@ -21,9 +21,9 @@ settings = get_settings()
 setup_logging(settings.log_level)
 
 app = FastAPI(
-    title="rag-backend",
-    version="1.0.0",
-    description="Production-ready Retrieval-Augmented Generation (RAG) Backend API",
+    title="RAG-Backend",
+    version="1.0.7",
+    description="Production-ready Retrieval-Augmented Generation (RAG) Backend API with Multi-Tenant Text-to-SQL and Document Chat Platform",
     openapi_url="/openapi.json",
     docs_url="/docs",
 )

@@ -31,6 +31,15 @@ from app.services.retrieval.reranker import Reranker
 from app.services.retrieval.retriever import Retriever
 from app.services.sql.engine import SQLEngine
 
+from app.db.models.citation import MessageCitation
+from app.db.models.conversation import Conversation
+from app.db.models.message import Message
+from app.db.models.query_execution import QueryExecution
+from app.repositories.audit_repo import AuditRepository
+from app.repositories.conversation_repo import ConversationRepository
+from app.repositories.query_execution_repo import QueryExecutionRepository
+from app.services.audit_service import AuditService
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
@@ -86,6 +95,128 @@ async def _run_orchestration(
     return conversation_id, final_state
 
 
+async def _persist_chat_turn(
+    conversation_id: str,
+    request: ChatRequest,
+    final_state: AgentState,
+    tenant_id: str,
+    user_id: str,
+    db: AsyncSession,
+) -> str:
+    """Persist conversation, messages, citations, query executions, and audit logs to Postgres."""
+    conv_repo = ConversationRepository(db)
+    conv_uuid = uuid.UUID(conversation_id)
+    tenant_uuid = uuid.UUID(tenant_id)
+    user_uuid = uuid.UUID(user_id)
+
+    # 1. Ensure Conversation exists in Postgres
+    conv = await conv_repo.get_with_messages(conv_uuid, tenant_id=tenant_uuid)
+    if not conv:
+        conv = Conversation(
+            id=conv_uuid,
+            tenant_id=tenant_uuid,
+            user_id=user_uuid,
+            title=request.message[:50] if request.message else "New Conversation",
+            active_connection_ids=request.database_connection_ids,
+            active_knowledge_base_ids=request.knowledge_base_ids,
+        )
+        conv = await conv_repo.create(conv)
+
+    # 2. Save User Message
+    user_msg = Message(
+        tenant_id=tenant_uuid,
+        conversation_id=conv_uuid,
+        role="user",
+        content=request.message,
+    )
+    await conv_repo.add_message(user_msg)
+
+    # 3. Save Assistant Message
+    answer = final_state.get("final_answer", "")
+    intent = final_state.get("detected_intent", "general")
+    sources_used = final_state.get("sources_used", [])
+
+    assistant_msg = Message(
+        tenant_id=tenant_uuid,
+        conversation_id=conv_uuid,
+        role="assistant",
+        content=answer,
+        intent=intent,
+        metadata_info={"sources_used": sources_used},
+    )
+    await conv_repo.add_message(assistant_msg)
+
+    # 4. Save Citations
+    citations = final_state.get("citations", [])
+    for idx, cit in enumerate(citations):
+        file_id_val = None
+        if hasattr(cit, "file_id") and cit.file_id:
+            try:
+                file_id_val = uuid.UUID(cit.file_id)
+            except ValueError:
+                pass
+
+        mc = MessageCitation(
+            tenant_id=tenant_uuid,
+            message_id=assistant_msg.id,
+            file_id=file_id_val,
+            relevance_score=getattr(cit, "score", None),
+            citation_index=idx + 1,
+        )
+        db.add(mc)
+
+    # 5. Save QueryExecution if SQL query occurred
+    sql_summary = final_state.get("sql_summary")
+    query_exec_id = None
+    if sql_summary and sql_summary.query:
+        q_exec_repo = QueryExecutionRepository(db)
+        conn_id_val = None
+        if request.database_connection_ids:
+            try:
+                conn_id_val = uuid.UUID(request.database_connection_ids[0])
+            except ValueError:
+                pass
+
+        q_exec = QueryExecution(
+            tenant_id=tenant_uuid,
+            user_id=user_uuid,
+            message_id=assistant_msg.id,
+            connection_id=conn_id_val,
+            generated_sql=sql_summary.query,
+            status="completed" if not sql_summary.error else "failed",
+            rows_returned=sql_summary.row_count,
+            error_message=sql_summary.error,
+            metadata_info={"preview": sql_summary.result_preview or []},
+        )
+        q_exec = await q_exec_repo.create(q_exec)
+        query_exec_id = str(q_exec.id)
+        sql_summary.query_execution_id = query_exec_id
+
+    await db.flush()
+
+    # 6. Audit Logging
+    audit_svc = AuditService(AuditRepository(db))
+    await audit_svc.log_event(
+        action="chat_message_sent",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        resource_type="conversation",
+        resource_id=conversation_id,
+        details={"intent": intent, "message_id": str(assistant_msg.id)},
+    )
+    if sql_summary and sql_summary.query:
+        await audit_svc.log_event(
+            action="sql_executed",
+            tenant_id=tenant_id,
+            user_id=user_id,
+            resource_type="query_execution",
+            resource_id=query_exec_id,
+            details={"query": sql_summary.query, "row_count": sql_summary.row_count},
+        )
+
+    return str(assistant_msg.id)
+
+
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -111,8 +242,17 @@ async def chat(
     await history_engine.append_user_message(conversation_id, request.message)
     await history_engine.append_assistant_message(conversation_id, answer)
 
+    message_id = await _persist_chat_turn(
+        conversation_id=conversation_id,
+        request=request,
+        final_state=final_state,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        db=db,
+    )
+
     return ChatResponse(
-        message_id=str(uuid.uuid4()),
+        message_id=message_id,
         conversation_id=conversation_id,
         answer=answer,
         intent=intent,
@@ -147,6 +287,16 @@ async def chat_stream(
             yield f"event: token\ndata: {token} \n\n"
         await history_engine.append_user_message(conversation_id, request.message)
         await history_engine.append_assistant_message(conversation_id, answer)
+
+        await _persist_chat_turn(
+            conversation_id=conversation_id,
+            request=request,
+            final_state=final_state,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            db=db,
+        )
+
         yield "event: done\ndata: {}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

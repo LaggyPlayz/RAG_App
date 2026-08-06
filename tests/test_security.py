@@ -20,3 +20,34 @@ def test_credential_fernet_encryption():
     assert encrypted != secret_pass
     decrypted = decrypt_value(encrypted)
     assert decrypted == secret_pass
+
+
+@pytest.mark.asyncio
+async def test_audit_service_logging():
+    from unittest.mock import AsyncMock, MagicMock
+    from app.services.audit_service import AuditService
+
+    mock_repo = MagicMock()
+    mock_repo.log_action = AsyncMock()
+
+    svc = AuditService(mock_repo)
+    await svc.log_event(
+        action="user_login",
+        tenant_id="tenant-123",
+        user_id="user-456",
+        resource_type="user",
+        resource_id="user-456",
+        details={"ip": "127.0.0.1"},
+    )
+
+    mock_repo.log_action.assert_called_once_with(
+        action="user_login",
+        tenant_id="tenant-123",
+        user_id="user-456",
+        resource_type="user",
+        resource_id="user-456",
+        ip_address=None,
+        user_agent=None,
+        details={"ip": "127.0.0.1"},
+    )
+
