@@ -333,5 +333,3 @@ The following are intentional scoping decisions made for this release. They are 
 ## 📜 License
 
 This project is distributed under the MIT License. See `LICENSE` for details.
-
-If no `LICENSE` file exists yet in the repository, add one before publishing — code without a license file is "all rights reserved" by default even if you intend it to be open source.
