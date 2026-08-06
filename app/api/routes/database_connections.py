@@ -24,6 +24,19 @@ async def create_connection(
     svc = ConnectionService(repo)
     conn = await svc.create_connection(tenant_id, user_id, request)
 
+    from app.repositories.audit_repo import AuditRepository
+    from app.services.audit_service import AuditService
+    audit_svc = AuditService(AuditRepository(db))
+    await audit_svc.log_event(
+        action="connection_created",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        resource_type="database_connection",
+        resource_id=str(conn.id),
+        details={"name": conn.name, "database_type": conn.database_type},
+    )
+
+
     return ConnectionResponse(
         id=str(conn.id),
         tenant_id=str(conn.tenant_id),
@@ -112,11 +125,27 @@ async def get_connection(
 async def test_connection(
     id: str,
     tenant_id: str = Depends(get_tenant_id),
+    user_id: str = Depends(get_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     repo = ConnectionRepository(db)
     svc = ConnectionService(repo)
-    return await svc.test_existing_connection(id, tenant_id)
+    res = await svc.test_existing_connection(id, tenant_id)
+
+    from app.repositories.audit_repo import AuditRepository
+    from app.services.audit_service import AuditService
+    audit_svc = AuditService(AuditRepository(db))
+    await audit_svc.log_event(
+        action="connection_tested",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        resource_type="database_connection",
+        resource_id=id,
+        details={"success": res.success, "message": res.message},
+    )
+
+    return res
+
 
 
 @router.post("/{id}/sync-schema")

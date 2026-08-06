@@ -2,7 +2,4 @@
 .venv
 __pycache__
 uploads
-sql/migrations
 .pytest_cache
-venv
-.vscode

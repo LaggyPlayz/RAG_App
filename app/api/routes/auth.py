@@ -36,12 +36,26 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     access_token = create_access_token(payload)
     refresh_token = create_refresh_token(payload)
 
+    # Log audit event
+    from app.repositories.audit_repo import AuditRepository
+    from app.services.audit_service import AuditService
+    audit_svc = AuditService(AuditRepository(db))
+    await audit_svc.log_event(
+        action="user_login",
+        tenant_id=str(user.tenant_id),
+        user_id=str(user.id),
+        resource_type="user",
+        resource_id=str(user.id),
+        details={"email": user.email},
+    )
+
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
         expires_in=1800,
     )
+
 
 
 @router.post("/refresh", response_model=TokenResponse)

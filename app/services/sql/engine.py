@@ -63,16 +63,20 @@ class SQLEngine:
 
         connection_url = self.connection_service.get_decrypted_connection_url(conn)
 
-        # 3. Generate and validate SQL
+        # 3. Generate and validate SQL with AST row-level filter injection
         try:
             sql = await self.text_to_sql.generate_sql(
                 user_query=question,
                 schema_context=schema_context,
                 dialect=conn.database_type,
                 allowed_tables=allowed_tables,
+                permitted_schema=permitted_schema,
+                tenant_id=tenant_id,
+                user_id=user_id,
             )
         except SQLValidationError as exc:
             return f"SQL Generation Failed: {exc.message}", SQLExecutionSummary(query="", row_count=0, error=exc.message), []
+
 
         # 4. Execute query safely
         try:

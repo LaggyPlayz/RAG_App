@@ -31,6 +31,9 @@ class TextToSQLService:
         schema_context: str,
         dialect: str = "postgres",
         allowed_tables: set[str] | None = None,
+        permitted_schema: dict | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
     ) -> str:
         messages = self._build_prompt(user_query, schema_context, dialect)
         raw_response = await self.llm.complete(messages)
@@ -49,6 +52,14 @@ class TextToSQLService:
                     code_lines.append(line)
             sql = "\n".join(code_lines).strip()
 
-        # Validate generated SQL with SQLGuard
-        validated_sql = self.guard.validate_and_sanitize(sql, dialect=dialect, allowed_tables=allowed_tables)
+        # Validate generated SQL with SQLGuard (and inject mandatory row filters)
+        validated_sql = self.guard.validate_and_sanitize(
+            sql,
+            dialect=dialect,
+            allowed_tables=allowed_tables,
+            permitted_schema=permitted_schema,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
         return validated_sql
+
