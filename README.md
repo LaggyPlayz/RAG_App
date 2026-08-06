@@ -56,6 +56,14 @@ RAG_App/
 
 ---
 
+## Screenshot
+![Back-end Dashboard Screenshot](/Screenshot_RAG_project.png)
+
+---
+
+
+---
+
 ## Key Features
 
 - **Multi-strategy document ingestion** — loaders for PDF, DOCX, PPTX, Excel, CSV, HTML, Markdown, JSON, YAML, and plain text (`app/services/ingestion/`).
