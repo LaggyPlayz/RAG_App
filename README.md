@@ -270,7 +270,7 @@ POST   /api/admin/collections
 
 ---
 
-## 🤔 Chunking Strategies
+## 🧩 Chunking Strategies
 
 All strategies implement a common interface (`app/services/chunking/base.py`) and are selected at runtime via `chunker_factory.py`.
 
