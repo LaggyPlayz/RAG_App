@@ -1,0 +1,50 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=development
+      - LOG_LEVEL=INFO
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/rag_platform
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+    volumes:
+      - ./uploads:/app/uploads
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: rag_platform
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init/schema.sql:/docker-entrypoint-initdb.d/1_schema.sql
+      - ./sql/init/seed.sql:/docker-entrypoint-initdb.d/2_seed.sql
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.0
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  postgres_data:
+  qdrant_data:
