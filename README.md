@@ -54,13 +54,8 @@ RAG_App/
 └── .env.example
 ```
 
----
-
 ## Screenshot
 ![Back-end Dashboard Screenshot](/Screenshot_RAG_project.png)
-
----
-
 
 ---
 
