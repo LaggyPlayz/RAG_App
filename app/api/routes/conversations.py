@@ -123,14 +123,29 @@ async def get_conversation(
     )
 
 
+from app.api.dependencies import get_audit_service
+from app.services.audit_service import AuditService
+
 @router.delete("/{id}")
 async def delete_conversation(
     id: str,
     tenant_id: str = Depends(get_tenant_id),
+    user_id: str = Depends(get_user_id),
     db: AsyncSession = Depends(get_db),
+    audit_svc: AuditService = Depends(get_audit_service),
 ):
     repo = ConversationRepository(db)
     deleted = await repo.delete(id, tenant_id=tenant_id)
     if not deleted:
         raise NotFoundError(f"Conversation '{id}' not found")
+
+    await audit_svc.log_event(
+        action="conversation_deleted",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        resource_type="conversation",
+        resource_id=id,
+    )
+
     return {"status": "ok", "message": f"Conversation '{id}' deleted"}
+

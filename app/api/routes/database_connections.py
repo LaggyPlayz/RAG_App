@@ -10,6 +10,9 @@ from app.services.database.connection_service import ConnectionService
 from app.services.database.schema_discovery import SchemaDiscoveryService
 from app.utils.exceptions import NotFoundError
 
+from app.api.dependencies import get_audit_service
+from app.services.audit_service import AuditService
+
 router = APIRouter(prefix="/api/database-connections", tags=["database-connections"])
 
 
@@ -19,14 +22,12 @@ async def create_connection(
     tenant_id: str = Depends(get_tenant_id),
     user_id: str = Depends(get_user_id),
     db: AsyncSession = Depends(get_db),
+    audit_svc: AuditService = Depends(get_audit_service),
 ):
     repo = ConnectionRepository(db)
     svc = ConnectionService(repo)
     conn = await svc.create_connection(tenant_id, user_id, request)
 
-    from app.repositories.audit_repo import AuditRepository
-    from app.services.audit_service import AuditService
-    audit_svc = AuditService(AuditRepository(db))
     await audit_svc.log_event(
         action="connection_created",
         tenant_id=tenant_id,
@@ -35,7 +36,6 @@ async def create_connection(
         resource_id=str(conn.id),
         details={"name": conn.name, "database_type": conn.database_type},
     )
-
 
     return ConnectionResponse(
         id=str(conn.id),
@@ -127,14 +127,12 @@ async def test_connection(
     tenant_id: str = Depends(get_tenant_id),
     user_id: str = Depends(get_user_id),
     db: AsyncSession = Depends(get_db),
+    audit_svc: AuditService = Depends(get_audit_service),
 ):
     repo = ConnectionRepository(db)
     svc = ConnectionService(repo)
     res = await svc.test_existing_connection(id, tenant_id)
 
-    from app.repositories.audit_repo import AuditRepository
-    from app.services.audit_service import AuditService
-    audit_svc = AuditService(AuditRepository(db))
     await audit_svc.log_event(
         action="connection_tested",
         tenant_id=tenant_id,
@@ -147,12 +145,13 @@ async def test_connection(
     return res
 
 
-
 @router.post("/{id}/sync-schema")
 async def sync_schema(
     id: str,
     tenant_id: str = Depends(get_tenant_id),
+    user_id: str = Depends(get_user_id),
     db: AsyncSession = Depends(get_db),
+    audit_svc: AuditService = Depends(get_audit_service),
 ):
     conn_repo = ConnectionRepository(db)
     schema_repo = SchemaRepository(db)
@@ -160,4 +159,14 @@ async def sync_schema(
     discovery_svc = SchemaDiscoveryService(conn_svc, conn_repo, schema_repo)
 
     await discovery_svc.sync_schema(id, tenant_id)
+
+    await audit_svc.log_event(
+        action="schema_synced",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        resource_type="database_connection",
+        resource_id=id,
+    )
+
     return {"status": "ok", "message": "Schema sync completed successfully"}
+

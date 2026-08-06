@@ -9,6 +9,9 @@ from app.services.documents.upload_service import UploadService
 from app.utils.exceptions import NotFoundError
 from app.workers.ingestion_worker import trigger_file_ingestion
 
+from app.api.dependencies import get_audit_service
+from app.services.audit_service import AuditService
+
 router = APIRouter(prefix="/api/files", tags=["documents"])
 
 
@@ -19,6 +22,7 @@ async def upload_file(
     tenant_id: str = Depends(get_tenant_id),
     user_id: str = Depends(get_user_id),
     db: AsyncSession = Depends(get_db),
+    audit_svc: AuditService = Depends(get_audit_service),
 ):
     file_repo = FileRepository(db)
     upload_svc = UploadService(file_repo)
@@ -33,6 +37,15 @@ async def upload_file(
     # Trigger async processing in background worker
     trigger_file_ingestion(str(db_file.id), tenant_id)
 
+    await audit_svc.log_event(
+        action="file_uploaded",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        resource_type="file",
+        resource_id=str(db_file.id),
+        details={"original_name": db_file.original_name},
+    )
+
     return FileUploadResponse(
         file_id=str(db_file.id),
         original_name=db_file.original_name,
@@ -40,6 +53,7 @@ async def upload_file(
         status="pending",
         message="File uploaded successfully and processing started",
     )
+
 
 
 @router.get("", response_model=list[FileResponse])
@@ -105,13 +119,25 @@ async def get_file(
 async def delete_file(
     id: str,
     tenant_id: str = Depends(get_tenant_id),
+    user_id: str = Depends(get_user_id),
     db: AsyncSession = Depends(get_db),
+    audit_svc: AuditService = Depends(get_audit_service),
 ):
     repo = FileRepository(db)
     deleted = await repo.delete(id, tenant_id=tenant_id)
     if not deleted:
         raise NotFoundError(f"File '{id}' not found")
+
+    await audit_svc.log_event(
+        action="file_deleted",
+        tenant_id=tenant_id,
+        user_id=user_id,
+        resource_type="file",
+        resource_id=id,
+    )
+
     return {"status": "ok", "message": f"File '{id}' deleted successfully"}
+
 
 
 @router.post("/{id}/reprocess")

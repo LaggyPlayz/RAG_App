@@ -48,9 +48,11 @@ def get_history_engine() -> HistoryEngine:
     return HistoryEngine()
 
 
+from app.repositories.audit_repo import AuditRepository
+from app.services.audit_service import AuditService
+
+
 def get_audit_service(db: AsyncSession = Depends(get_db)) -> AuditService:
-    from app.core.database import get_db
-    from app.repositories.audit_repo import AuditRepository
-    from app.services.audit_service import AuditService
     repo = AuditRepository(db)
     return AuditService(repo)
+

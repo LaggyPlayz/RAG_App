@@ -13,11 +13,17 @@ from app.models.auth import LoginRequest, RefreshTokenRequest, TokenResponse, Us
 from app.repositories.user_repo import UserRepository
 from app.utils.exceptions import AuthenticationError
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+from app.api.dependencies import get_audit_service
+from app.services.audit_service import AuditService
 
+router = APIRouter()
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    request: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+    audit_svc: AuditService = Depends(get_audit_service),
+):
     user_repo = UserRepository(db)
     user = await user_repo.get_by_email(request.email)
     if not user or not user.password_hash:
@@ -37,9 +43,6 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     refresh_token = create_refresh_token(payload)
 
     # Log audit event
-    from app.repositories.audit_repo import AuditRepository
-    from app.services.audit_service import AuditService
-    audit_svc = AuditService(AuditRepository(db))
     await audit_svc.log_event(
         action="user_login",
         tenant_id=str(user.tenant_id),
@@ -48,6 +51,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
         resource_id=str(user.id),
         details={"email": user.email},
     )
+
 
     return TokenResponse(
         access_token=access_token,

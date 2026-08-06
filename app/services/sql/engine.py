@@ -78,9 +78,20 @@ class SQLEngine:
             return f"SQL Generation Failed: {exc.message}", SQLExecutionSummary(query="", row_count=0, error=exc.message), []
 
 
-        # 4. Execute query safely
+        # 4. Execute query safely and apply column masking
         try:
             rows, count, latency = self.executor.execute_query(connection_url, sql)
+
+            # Build column mask map from permitted schema
+            column_masks: dict[str, str] = {}
+            for table_info in permitted_schema.values():
+                for col in table_info.get("columns", []):
+                    if col.get("mask_type"):
+                        column_masks[col["name"].lower()] = col["mask_type"]
+
+            if column_masks:
+                rows = apply_column_masking(rows, column_masks)
+
             markdown_result = format_sql_results_as_markdown(rows)
 
             summary = SQLExecutionSummary(
