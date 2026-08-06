@@ -6,7 +6,7 @@ A multi-tenant-oriented Retrieval-Augmented Generation (RAG) and Text-to-SQL bac
 
 ---
 
-## Repository Structure
+📂 ## Repository Structure
 
 ```
 RAG_App/
@@ -54,7 +54,7 @@ RAG_App/
 └── .env.example
 ```
 
-## Screenshot
+🖼️ ## Screenshot
 ![Back-end Dashboard Screenshot](/Screenshot_RAG_project.png)
 
 ---
@@ -76,7 +76,7 @@ RAG_App/
 
 ---
 
-## Quick Start
+⭐ ## Quick Start
 
 ### Prerequisites
 - Python 3.11+
@@ -115,7 +115,7 @@ Interactive API docs are available once the server is running:
 
 ---
 
-## Application Pages
+📄 ## Application Pages
 
 This is a backend service — there is no rendered frontend in this repository. The "pages" a client (Swagger UI, ReDoc, or your own frontend) will interact with map to the router modules under `app/api/routes/`:
 
@@ -132,7 +132,7 @@ This is a backend service — there is no rendered frontend in this repository. 
 
 ---
 
-## Architecture Overview
+🔎 ## Architecture Overview
 
 ```
 Client
@@ -162,7 +162,7 @@ Storage:
 
 ---
 
-## Security Controls
+🛡️ ## Security Controls
 
 This system implements several layered, backend-enforced security controls that cannot be bypassed by the LLM or by prompt injection:
 
@@ -181,7 +181,7 @@ This system implements several layered, backend-enforced security controls that 
 
 ---
 
-## Running Tests
+🧪 ## Running Tests
 
 ```bash
 # Full suite
@@ -213,7 +213,7 @@ Test coverage in this repo:
 
 ---
 
-## Environment Variables
+⚡ ## Environment Variables
 
 Confirm these against your actual `.env.example` — names below follow the convention implied by `app/core/config.py` and the services present in the repo.
 
@@ -239,7 +239,7 @@ Confirm these against your actual `.env.example` — names below follow the conv
 
 ---
 
-## Key API Endpoints
+🔴 ## Key API Endpoints
 
 Exact HTTP verbs/paths should be confirmed in each router file — this reflects the standard REST mapping implied by the route names.
 
@@ -270,7 +270,7 @@ POST   /api/admin/collections
 
 ---
 
-## Chunking Strategies
+🤔 ## Chunking Strategies
 
 All strategies implement a common interface (`app/services/chunking/base.py`) and are selected at runtime via `chunker_factory.py`.
 
@@ -292,7 +292,7 @@ Supporting modules: `metadata.py` (chunk metadata attachment) and `token_utils.p
 
 ---
 
-## Docker Compose Services
+💻 ## Docker Compose Services
 
 Based on `docker-compose.yml` and the services the app depends on:
 
@@ -316,7 +316,7 @@ docker-compose down -v
 
 ---
 
-## Known Limitations & Architecture Trade-offs
+🛑 ## Known Limitations & Architecture Trade-offs
 
 The following are intentional scoping decisions made for this release. They are documented here explicitly so reviewers can evaluate them as conscious choices rather than silent gaps.
 
@@ -330,7 +330,7 @@ The following are intentional scoping decisions made for this release. They are 
 
 ---
 
-## License
+📜 ## License
 
 This project is distributed under the MIT License. See `LICENSE` for details.
 
