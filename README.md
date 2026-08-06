@@ -1,5 +1,4 @@
-# Multi-Tenant Text-to-SQL
-and Document Chat Platform
+# Multi-Tenant Text-to-SQL and Document Chat Platform
 
 A multi-tenant-oriented Retrieval-Augmented Generation (RAG) and Text-to-SQL backend. It ingests documents and live databases, indexes content for semantic search, and answers natural-language questions by combining vector retrieval with guarded SQL generation and execution.
 
